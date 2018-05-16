@@ -5,9 +5,14 @@ from mxnet.gluon import nn
 # %matplotlib inline
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from mxnet import autograd
+from mxnet.contrib.ndarray import MultiBoxTarget
 from mxnet.contrib.ndarray import MultiBoxDetection
 from mxnet.contrib.ndarray import MultiBoxPrior
 import CommonFunc.gluon_func as GF
+from mxnet import init
+from mxnet import metric
+import time
 
 mpl.rcParams['figure.dpi'] = 120
 
@@ -44,6 +49,29 @@ def box_to_rect(box, color, linewidth=3):
     """convert an anchor box to a matplotlib rectangle"""
     box = box.asnumpy()
     return plt.Rectangle((box[0], box[1]), box[2] - box[0], box[3] - box[1], fill=False, edgecolor=color, linewidth=linewidth)
+
+
+class FocalLoss(gluon.loss.Loss):
+    def __init__(self, axis=-1, alpha=0.25, gamma=2, batch_axis=0, **kwargs):
+        super(FocalLoss, self).__init__(None, batch_axis, **kwargs)
+        self._axis = axis
+        self._alpha = alpha
+        self._gamma = gamma
+
+    def hybrid_forward(self, F, output, label):
+        output = F.softmax(output)
+        pj = output.pick(label, axis=self._axis, keepdims=True)
+        loss = - self._alpha * ((1 - pj) ** self._gamma) * pj.log()
+        return loss.mean(axis=self._batch_axis, exclude=True)
+
+
+class SmoothL1Loss(gluon.loss.Loss):
+    def __init__(self, batch_axis=0, **kwargs):
+        super(SmoothL1Loss, self).__init__(None, batch_axis, **kwargs)
+
+    def hybrid_forward(self, F, output, label, mask):
+        loss = F.smooth_l1((output - label) * mask, scalar=1.0)
+        return loss.mean(self._batch_axis, exclude=True)
 
 
 class ToySSD(gluon.Block):
@@ -108,6 +136,10 @@ class ToySSD(gluon.Block):
             out.add(self.down_sample(nfilters))
         return out
 
+    def training_targets(self, anchors, class_preds, labels):
+        class_preds = class_preds.transpose(axes=(0, 2, 1))
+        return MultiBoxTarget(anchors, labels, class_preds)
+
     # 创建一个玩具SSD模型
     # 这个网络包含四块。主体网络，三个减半模块，以及五个物体类别和边框预测模块。其中预测分别应用在在主体网络输出，减半模块输出，和最后的全局池化层上。
     def toy_ssd_model(self, num_anchors, num_classes):
@@ -154,7 +186,7 @@ class ToySSD(gluon.Block):
         class_preds = class_preds.reshape(shape=(0, -1, self.num_classes+1))
         return anchors, class_preds, box_preds
 
-    def start_train(self, train_data, test_data):
+    def start_train(self, train_data, test_data, num_class, batch_size):
         ctx = GF.GluonFunc.get_gpu(0)
         # 初始化模型和训练器
         # the CUDA implementation requres each image has at least 3 lables.
@@ -165,6 +197,11 @@ class ToySSD(gluon.Block):
         net = ToySSD(num_class)
         net.initialize(init.Xavier(magnitude=2), ctx=ctx[0])
         trainer = gluon.Trainer(net.collect_params(), 'sgd', {'learning_rate': 0.1, 'wd': 5e-4})
+
+        cls_loss = FocalLoss()
+        cls_metric = metric.Accuracy()
+        box_loss = SmoothL1Loss()
+        box_metric = metric.MAE()
 
         # 训练模型
         for epoch in range(30):
@@ -178,8 +215,7 @@ class ToySSD(gluon.Block):
                 y = batch.label[0].as_in_context(ctx)
                 with autograd.record():
                     anchors, class_preds, box_preds = net(x)
-                    box_target, box_mask, cls_target = training_targets(
-                        anchors, class_preds, y)
+                    box_target, box_mask, cls_target = self.training_targets(anchors, class_preds, y)
                     # losses
                     loss1 = cls_loss(class_preds, cls_target)
                     loss2 = box_loss(box_preds, box_target, box_mask)
@@ -190,12 +226,11 @@ class ToySSD(gluon.Block):
                 cls_metric.update([cls_target], [class_preds.transpose((0, 2, 1))])
                 box_metric.update([box_target], [box_preds * box_mask])
 
-            print('Epoch %2d, train %s %.2f, %s %.5f, time %.1f sec' % (
-                epoch, *cls_metric.get(), *box_metric.get(), time.time() - tic))
+            print('Epoch %2d, train %s %.2f, %s %.5f, time %.1f sec' % epoch, *cls_metric.get(), *box_metric.get(), time.time() - tic)
 
     # 预测模型
-    def process_image(self, fname):
-        with open(fname, 'rb') as f:
+    def process_image(self, file_name, data_shape, rgb_mean):
+        with open(file_name, 'rb') as f:
             im = image.imdecode(f.read())
         # resize to data_shape
         data = image.imresize(im, data_shape, data_shape)
@@ -209,9 +244,9 @@ class ToySSD(gluon.Block):
         cls_probs = nd.SoftmaxActivation(cls_preds.transpose((0, 2, 1)), mode='channel')
         return MultiBoxDetection(cls_probs, box_preds, anchors, force_suppress=True, clip=False)
 
-    def start_test(self):
+    def start_test(self, file_name, data_shape, rgb_mean):
         ctx = GF.GluonFunc.get_gpu(0)
-        x, im = self.process_image('../img/pikachu.jpg')
+        x, im = self.process_image(file_name, data_shape, rgb_mean)
         out = self.predict(x)
         out.shape
 
@@ -225,8 +260,9 @@ if __name__ == '__main__':
     # download_data(data_path)
     Ai = ToySSD()
     train_data, test_data, class_names, num_class = get_iterators(data_shape, batch_size)
-    Ai.start_train(train_data, test_data)
+    Ai.start_train(train_data, test_data, class_names, batch_size)
 
+    Ai.start_test('../img/pikachu.jpg', data_shape, rgb_mean)
     # out = predict(x)
     # out.shape
 
