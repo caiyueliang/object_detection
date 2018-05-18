@@ -105,7 +105,7 @@ class ToySSD(gluon.Block):
     # 通道 a*(num_class+1)+1+b 是其包含第b个物体的分数
     def class_predictor(self, num_anchors, num_classes):
         """return a layer to predict classes"""
-        return nn.Conv2D(num_anchors * (num_classes + 1), 3, padding=1)
+        return nn.Conv2D(channels=num_anchors * (num_classes + 1), kernel_size=3, padding=1)
 
     # 预测边界框
     # 因为真实的边界框可以是任意形状，我们需要预测如何从一个锚框变换成真正的边界框。这个变换可以由一个长为4的向量来描述。同上一样，
@@ -149,7 +149,7 @@ class ToySSD(gluon.Block):
 
         class_predictors = nn.Sequential()
         box_predictors = nn.Sequential()
-        for _ in range(5):
+        for i in range(5):
             class_predictors.add(self.class_predictor(num_anchors, num_classes))    # 物体类别预测模块
             box_predictors.add(self.box_predictor(num_anchors))                     # 边框预测模块
 
@@ -187,7 +187,8 @@ class ToySSD(gluon.Block):
         return anchors, class_preds, box_preds
 
     def start_train(self, train_data, test_data, num_class, batch_size):
-        ctx = GF.GluonFunc.get_gpu(0)
+        gf = GF.GluonFunc()
+        ctx = gf.get_gpu(1)
         # 初始化模型和训练器
         # the CUDA implementation requres each image has at least 3 lables.
         # Padd two -1 labels for each instance
@@ -258,9 +259,11 @@ rgb_mean = nd.array([123, 117, 104])
 
 if __name__ == '__main__':
     # download_data(data_path)
-    Ai = ToySSD()
-    train_data, test_data, class_names, num_class = get_iterators(data_shape, batch_size)
-    Ai.start_train(train_data, test_data, class_names, batch_size)
+
+    train_data, test_data, class_names, num_class = get_iterators(data_path, data_shape, batch_size)
+    print('train_data', train_data, 'test_data', test_data, 'class_names', class_names, 'num_class', num_class)
+    Ai = ToySSD(num_class)
+    Ai.start_train(train_data, test_data, num_class, batch_size)
 
     Ai.start_test('../img/pikachu.jpg', data_shape, rgb_mean)
     # out = predict(x)
