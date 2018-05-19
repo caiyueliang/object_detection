@@ -14,8 +14,6 @@ from mxnet import init
 from mxnet import metric
 import time
 
-mpl.rcParams['figure.dpi'] = 120
-
 
 # 下载数据
 def download_data(data_dir=None):
@@ -189,6 +187,7 @@ class ToySSD(gluon.Block):
     def start_train(self, train_data, test_data, num_class, batch_size):
         gf = GF.GluonFunc()
         ctx = gf.get_gpu(1)
+        print(ctx)
         # 初始化模型和训练器
         # the CUDA implementation requres each image has at least 3 lables.
         # Padd two -1 labels for each instance
@@ -212,8 +211,9 @@ class ToySSD(gluon.Block):
             box_metric.reset()
             tic = time.time()
             for i, batch in enumerate(train_data):
-                x = batch.data[0].as_in_context(ctx)
-                y = batch.label[0].as_in_context(ctx)
+                # print(batch.data[0])
+                x = batch.data[0].as_in_context(ctx[0])
+                y = batch.label[0].as_in_context(ctx[0])
                 with autograd.record():
                     anchors, class_preds, box_preds = net(x)
                     box_target, box_mask, cls_target = self.training_targets(anchors, class_preds, y)
@@ -227,7 +227,7 @@ class ToySSD(gluon.Block):
                 cls_metric.update([cls_target], [class_preds.transpose((0, 2, 1))])
                 box_metric.update([box_target], [box_preds * box_mask])
 
-            print('Epoch %2d, train %s %.2f, %s %.5f, time %.1f sec' % epoch, *cls_metric.get(), *box_metric.get(), time.time() - tic)
+            print('Epoch %2d, train %s %.2f, %s %.5f, time %.1f sec' % (epoch, *cls_metric.get(), *box_metric.get(), time.time() - tic))
 
     # 预测模型
     def process_image(self, file_name, data_shape, rgb_mean):
@@ -254,7 +254,7 @@ class ToySSD(gluon.Block):
 # ======================================================================================================================
 data_path = 'data/pikachu/'
 data_shape = 256
-batch_size = 32
+batch_size = 16
 rgb_mean = nd.array([123, 117, 104])
 
 if __name__ == '__main__':
