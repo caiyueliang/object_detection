@@ -91,7 +91,7 @@ class ToySSD(gluon.Block):
         self.num_classes = num_classes
         self.verbose = verbose
         self.num_anchors = len(self.sizes[0]) + len(self.ratios[0]) - 1
-        print('[num_anchors]', self.num_anchors)
+        # print('[num_anchors]', self.num_anchors)
         # use name_scope to guard the names
         with self.name_scope():
             self.model = self.toy_ssd_model(self.num_anchors, self.num_classes)
@@ -248,7 +248,7 @@ def start_train(train_data, test_data, num_epochs, num_class, batch_size, save_c
         net.initialize(init.Xavier(magnitude=2), ctx=ctx[0])
     else:
         net.load_params(filename=save_model_name, ctx=ctx[0])
-        
+
     trainer = gluon.Trainer(net.collect_params(), 'sgd', {'learning_rate': 0.1, 'wd': 5e-4})
 
     cls_loss = FocalLoss()
