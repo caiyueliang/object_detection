@@ -221,7 +221,8 @@ def start_test(file_name, data_shape, rgb_mean, num_class, save_model_name, load
 
     x, im = process_image(file_name, data_shape, rgb_mean)
     out = predict(x, net, ctx[0])
-    out.shape
+    print('[predict]', out)
+    print('[out_shape]', out.shape)
 
 
 def start_train(train_data, test_data, num_epochs, num_class, batch_size, save_csv_name, save_model_name, save_flag=True):
@@ -291,7 +292,7 @@ if __name__ == '__main__':
     train_data, test_data, class_names, num_class = get_iterators(data_path, data_shape, batch_size)
     print('train_data', train_data, 'test_data', test_data, 'class_names', class_names, 'num_class', num_class)
     print('[sava_model_name]', save_model_name)
-    start_train(train_data, test_data, num_epochs, num_class, batch_size, save_csv_name, save_model_name)
+    # start_train(train_data, test_data, num_epochs, num_class, batch_size, save_csv_name, save_model_name)
 
     start_test('timg.jpg', data_shape, rgb_mean, num_class, save_model_name)
 
