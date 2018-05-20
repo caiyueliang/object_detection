@@ -3,6 +3,7 @@ import sys
 from mxnet import gluon
 from mxnet import image
 from mxnet import nd
+import mxnet as mx
 from mxnet.gluon import nn
 # %matplotlib inline
 import matplotlib as mpl
@@ -11,10 +12,17 @@ from mxnet import autograd
 from mxnet.contrib.ndarray import MultiBoxTarget
 from mxnet.contrib.ndarray import MultiBoxDetection
 from mxnet.contrib.ndarray import MultiBoxPrior
-import CommonFunc.gluon_func as GF
 from mxnet import init
 from mxnet import metric
 import time
+
+
+def get_gpu(num_gpu):
+    if num_gpu > 0:
+        ctx = [mx.gpu(i) for i in range(num_gpu)]
+    else:
+        ctx = [mx.cpu()]
+    return ctx
 
 
 # 下载数据
@@ -210,8 +218,7 @@ def predict(x, net, ctx):
 
 def start_test(file_name, data_shape, rgb_mean, num_class, save_model_name, load_flag=True):
     print('[start test] ...')
-    gf = GF.GluonFunc()
-    ctx = gf.get_gpu(1)
+    ctx = get_gpu(1)
     print(ctx)
 
     net = ToySSD(num_class)
@@ -227,8 +234,7 @@ def start_test(file_name, data_shape, rgb_mean, num_class, save_model_name, load
 
 def start_train(train_data, test_data, num_epochs, num_class, batch_size, save_csv_name, save_model_name, save_flag=True):
     print('[start train] ...')
-    gf = GF.GluonFunc()
-    ctx = gf.get_gpu(1)
+    ctx = get_gpu(1)
     print(ctx)
     # 初始化模型和训练器
     # the CUDA implementation requres each image has at least 3 lables.
@@ -292,7 +298,7 @@ if __name__ == '__main__':
     train_data, test_data, class_names, num_class = get_iterators(data_path, data_shape, batch_size)
     print('train_data', train_data, 'test_data', test_data, 'class_names', class_names, 'num_class', num_class)
     print('[sava_model_name]', save_model_name)
-    # start_train(train_data, test_data, num_epochs, num_class, batch_size, save_csv_name, save_model_name)
+    start_train(train_data, test_data, num_epochs, num_class, batch_size, save_csv_name, save_model_name)
 
     start_test('timg.jpg', data_shape, rgb_mean, num_class, save_model_name)
 
