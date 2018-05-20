@@ -222,7 +222,7 @@ def start_test(file_name, data_shape, rgb_mean, save_model_name, load_flag=True)
     out.shape
 
 
-def start_train(train_data, test_data, num_class, batch_size, save_csv_name, save_model_name, save_flag=True):
+def start_train(train_data, test_data, num_epochs, num_class, batch_size, save_csv_name, save_model_name, save_flag=True):
     gf = GF.GluonFunc()
     ctx = gf.get_gpu(1)
     print(ctx)
@@ -242,7 +242,7 @@ def start_train(train_data, test_data, num_class, batch_size, save_csv_name, sav
     box_metric = metric.MAE()
 
     # 训练模型
-    for epoch in range(30):
+    for epoch in range(num_epochs):
         # reset data iterators and metrics
         train_data.reset()
         cls_metric.reset()
@@ -273,6 +273,7 @@ def start_train(train_data, test_data, num_class, batch_size, save_csv_name, sav
 
 # ======================================================================================================================
 data_path = 'data/pikachu/'
+num_epochs = 20
 data_shape = 256
 batch_size = 16
 rgb_mean = nd.array([123, 117, 104])
@@ -286,7 +287,7 @@ if __name__ == '__main__':
 
     train_data, test_data, class_names, num_class = get_iterators(data_path, data_shape, batch_size)
     print('train_data', train_data, 'test_data', test_data, 'class_names', class_names, 'num_class', num_class)
-    start_train(train_data, test_data, num_class, batch_size, save_csv_name, save_model_name)
+    start_train(train_data, test_data, num_epochs, num_class, batch_size, save_csv_name, save_model_name)
 
     start_test('../img/pikachu.jpg', data_shape, rgb_mean, save_model_name)
 
