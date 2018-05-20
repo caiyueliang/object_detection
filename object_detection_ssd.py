@@ -1,3 +1,5 @@
+import os
+import sys
 from mxnet import gluon
 from mxnet import image
 from mxnet import nd
@@ -206,14 +208,21 @@ def predict(x, net, ctx):
     return MultiBoxDetection(cls_probs, box_preds, anchors, force_suppress=True, clip=False)
 
 
-def start_test(file_name, data_shape, rgb_mean):
-    ctx = GF.GluonFunc.get_gpu(0)
+def start_test(file_name, data_shape, rgb_mean, save_model_name, load_flag=True):
+    gf = GF.GluonFunc()
+    ctx = gf.get_gpu(1)
+
+    net = ToySSD(num_class)
+    net.initialize(init.Xavier(magnitude=2), ctx=ctx[0])
+    if load_flag is True:               # 加载模型
+        net.load_params(save_model_name)
+
     x, im = process_image(file_name, data_shape, rgb_mean)
-    out = predict(x)
+    out = predict(x, net, ctx)
     out.shape
 
 
-def start_train(train_data, test_data, num_class, batch_size):
+def start_train(train_data, test_data, num_class, batch_size, save_csv_name, save_model_name, save_flag=True):
     gf = GF.GluonFunc()
     ctx = gf.get_gpu(1)
     print(ctx)
@@ -258,6 +267,9 @@ def start_train(train_data, test_data, num_class, batch_size):
 
         print('Epoch %2d, train %s %.2f, %s %.5f, time %.1f sec' % (epoch, *cls_metric.get(), *box_metric.get(), time.time() - tic))
 
+    if save_flag is True:
+        net.save_params(save_model_name)        # 保存模型
+
 
 # ======================================================================================================================
 data_path = 'data/pikachu/'
@@ -265,17 +277,18 @@ data_shape = 256
 batch_size = 16
 rgb_mean = nd.array([123, 117, 104])
 
+model_name = 'od_ssd'
+save_model_name = os.path.join(sys.path[0], 'train_models', model_name + '.params')
+save_csv_name = os.path.join(sys.path[0], 'train_models', model_name + '.csv')
+
 if __name__ == '__main__':
     # download_data(data_path)
 
     train_data, test_data, class_names, num_class = get_iterators(data_path, data_shape, batch_size)
     print('train_data', train_data, 'test_data', test_data, 'class_names', class_names, 'num_class', num_class)
-    # Ai = ToySSD(num_class)
-    start_train(train_data, test_data, num_class, batch_size)
+    start_train(train_data, test_data, num_class, batch_size, save_csv_name, save_model_name)
 
-    start_test('../img/pikachu.jpg', data_shape, rgb_mean)
-    # out = predict(x)
-    # out.shape
+    start_test('../img/pikachu.jpg', data_shape, rgb_mean, save_model_name)
 
 
 
