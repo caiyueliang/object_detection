@@ -208,21 +208,24 @@ def predict(x, net, ctx):
     return MultiBoxDetection(cls_probs, box_preds, anchors, force_suppress=True, clip=False)
 
 
-def start_test(file_name, data_shape, rgb_mean, save_model_name, load_flag=True):
+def start_test(file_name, data_shape, rgb_mean, num_class, save_model_name, load_flag=True):
+    print('[start test] ...')
     gf = GF.GluonFunc()
     ctx = gf.get_gpu(1)
+    print(ctx)
 
     net = ToySSD(num_class)
-    net.initialize(init.Xavier(magnitude=2), ctx=ctx[0])
+    # net.initialize(init.Xavier(magnitude=2), ctx=ctx[0])
     if load_flag is True:               # 加载模型
-        net.load_params(save_model_name)
+        net.load_params(filename=save_model_name, ctx=ctx[0])
 
     x, im = process_image(file_name, data_shape, rgb_mean)
-    out = predict(x, net, ctx)
+    out = predict(x, net, ctx[0])
     out.shape
 
 
 def start_train(train_data, test_data, num_epochs, num_class, batch_size, save_csv_name, save_model_name, save_flag=True):
+    print('[start train] ...')
     gf = GF.GluonFunc()
     ctx = gf.get_gpu(1)
     print(ctx)
@@ -273,7 +276,7 @@ def start_train(train_data, test_data, num_epochs, num_class, batch_size, save_c
 
 # ======================================================================================================================
 data_path = 'data/pikachu/'
-num_epochs = 20
+num_epochs = 2
 data_shape = 256
 batch_size = 16
 rgb_mean = nd.array([123, 117, 104])
@@ -287,9 +290,10 @@ if __name__ == '__main__':
 
     train_data, test_data, class_names, num_class = get_iterators(data_path, data_shape, batch_size)
     print('train_data', train_data, 'test_data', test_data, 'class_names', class_names, 'num_class', num_class)
+    print('[sava_model_name]', save_model_name)
     start_train(train_data, test_data, num_epochs, num_class, batch_size, save_csv_name, save_model_name)
 
-    start_test('../img/pikachu.jpg', data_shape, rgb_mean, save_model_name)
+    start_test('timg.jpg', data_shape, rgb_mean, num_class, save_model_name)
 
 
 
