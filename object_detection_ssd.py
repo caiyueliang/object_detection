@@ -228,11 +228,12 @@ def start_test(file_name, data_shape, rgb_mean, num_class, save_model_name, load
 
     x, im = process_image(file_name, data_shape, rgb_mean)
     out = predict(x, net, ctx[0])
-    print('[predict]', out)
-    print('[out_shape]', out.shape)
+    # print('[predict]', out)
+    # print('[out_shape]', out.shape)
 
 
-def start_train(train_data, test_data, num_epochs, num_class, batch_size, save_csv_name, save_model_name, save_flag=True):
+def start_train(train_data, test_data, num_epochs, num_class, batch_size, save_csv_name, save_model_name,
+                load_flag=False, save_flag=True):
     print('[start train] ...')
     ctx = get_gpu(1)
     print(ctx)
@@ -243,7 +244,11 @@ def start_train(train_data, test_data, num_epochs, num_class, batch_size, save_c
     train_data = test_data.sync_label_shape(train_data)
 
     net = ToySSD(num_class)
-    net.initialize(init.Xavier(magnitude=2), ctx=ctx[0])
+    if load_flag is False:
+        net.initialize(init.Xavier(magnitude=2), ctx=ctx[0])
+    else:
+        net.load_params(filename=save_model_name, ctx=ctx[0])
+        
     trainer = gluon.Trainer(net.collect_params(), 'sgd', {'learning_rate': 0.1, 'wd': 5e-4})
 
     cls_loss = FocalLoss()
@@ -300,7 +305,7 @@ if __name__ == '__main__':
     print('[sava_model_name]', save_model_name)
     start_train(train_data, test_data, num_epochs, num_class, batch_size, save_csv_name, save_model_name)
 
-    start_test('timg.jpg', data_shape, rgb_mean, num_class, save_model_name)
+    # start_test('timg.jpg', data_shape, rgb_mean, num_class, save_model_name)
 
 
 
