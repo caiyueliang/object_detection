@@ -76,14 +76,14 @@ class ToySSD(gluon.Block):
     def __init__(self, num_classes, verbose=False, **kwargs):
         super(ToySSD, self).__init__(**kwargs)
         # anchor box sizes and ratios for 5 feature scales
-        self.sizes = [[.2,.272], [.37,.447], [.54,.619], [.71,.79], [.88,.961]]
-        self.ratios = [[1,2,.5]]*5
+        self.sizes = [[.2,.272], [.37, .447], [.54, .619], [.71, .79], [.88, .961]]
+        self.ratios = [[1, 2, .5]]*5
         self.num_classes = num_classes
         self.verbose = verbose
-        num_anchors = len(self.sizes[0]) + len(self.ratios[0]) - 1
+        self.num_anchors = len(self.sizes[0]) + len(self.ratios[0]) - 1
         # use name_scope to guard the names
         with self.name_scope():
-            self.model = self.toy_ssd_model(num_anchors, num_classes)
+            self.model = self.toy_ssd_model(self.num_anchors, self.num_classes)
 
     # 合并来自不同层的预测输出
     # 前面我们提到过SSD的一个重要性质是它会在多个层同时做预测。每个层由于长宽和锚框选择不一样，导致输出的数据形状会不一样。
