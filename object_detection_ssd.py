@@ -81,6 +81,7 @@ class ToySSD(gluon.Block):
         self.num_classes = num_classes
         self.verbose = verbose
         self.num_anchors = len(self.sizes[0]) + len(self.ratios[0]) - 1
+        print('[num_anchors]', self.num_anchors)
         # use name_scope to guard the names
         with self.name_scope():
             self.model = self.toy_ssd_model(self.num_anchors, self.num_classes)
@@ -134,10 +135,6 @@ class ToySSD(gluon.Block):
             out.add(self.down_sample(nfilters))
         return out
 
-    def training_targets(self, anchors, class_preds, labels):
-        class_preds = class_preds.transpose(axes=(0, 2, 1))
-        return MultiBoxTarget(anchors, labels, class_preds)
-
     # 创建一个玩具SSD模型
     # 这个网络包含四块。主体网络，三个减半模块，以及五个物体类别和边框预测模块。其中预测分别应用在在主体网络输出，减半模块输出，和最后的全局池化层上。
     def toy_ssd_model(self, num_anchors, num_classes):
@@ -184,72 +181,83 @@ class ToySSD(gluon.Block):
         class_preds = class_preds.reshape(shape=(0, -1, self.num_classes+1))
         return anchors, class_preds, box_preds
 
-    def start_train(self, train_data, test_data, num_class, batch_size):
-        gf = GF.GluonFunc()
-        ctx = gf.get_gpu(1)
-        print(ctx)
-        # 初始化模型和训练器
-        # the CUDA implementation requres each image has at least 3 lables.
-        # Padd two -1 labels for each instance
-        train_data.reshape(label_shape=(3, 5))
-        train_data = test_data.sync_label_shape(train_data)
 
-        net = ToySSD(num_class)
-        net.initialize(init.Xavier(magnitude=2), ctx=ctx[0])
-        trainer = gluon.Trainer(net.collect_params(), 'sgd', {'learning_rate': 0.1, 'wd': 5e-4})
+# ======================================================================================================================
+def training_targets(anchors, class_preds, labels):
+    class_preds = class_preds.transpose(axes=(0, 2, 1))
+    return MultiBoxTarget(anchors, labels, class_preds)
 
-        cls_loss = FocalLoss()
-        cls_metric = metric.Accuracy()
-        box_loss = SmoothL1Loss()
-        box_metric = metric.MAE()
 
-        # 训练模型
-        for epoch in range(30):
-            # reset data iterators and metrics
-            train_data.reset()
-            cls_metric.reset()
-            box_metric.reset()
-            tic = time.time()
-            for i, batch in enumerate(train_data):
-                # print(batch.data[0])
-                x = batch.data[0].as_in_context(ctx[0])
-                y = batch.label[0].as_in_context(ctx[0])
-                with autograd.record():
-                    anchors, class_preds, box_preds = net(x)
-                    box_target, box_mask, cls_target = self.training_targets(anchors, class_preds, y)
-                    # losses
-                    loss1 = cls_loss(class_preds, cls_target)
-                    loss2 = box_loss(box_preds, box_target, box_mask)
-                    loss = loss1 + loss2
-                loss.backward()
-                trainer.step(batch_size)
-                # update metrics
-                cls_metric.update([cls_target], [class_preds.transpose((0, 2, 1))])
-                box_metric.update([box_target], [box_preds * box_mask])
+# 预测模型
+def process_image(file_name, data_shape, rgb_mean):
+    with open(file_name, 'rb') as f:
+        im = image.imdecode(f.read())
+    # resize to data_shape
+    data = image.imresize(im, data_shape, data_shape)
+    # minus rgb mean
+    data = data.astype('float32') - rgb_mean
+    # convert to batch x channel x height xwidth
+    return data.transpose((2, 0, 1)).expand_dims(axis=0), im
 
-            print('Epoch %2d, train %s %.2f, %s %.5f, time %.1f sec' % (epoch, *cls_metric.get(), *box_metric.get(), time.time() - tic))
 
-    # 预测模型
-    def process_image(self, file_name, data_shape, rgb_mean):
-        with open(file_name, 'rb') as f:
-            im = image.imdecode(f.read())
-        # resize to data_shape
-        data = image.imresize(im, data_shape, data_shape)
-        # minus rgb mean
-        data = data.astype('float32') - rgb_mean
-        # convert to batch x channel x height xwidth
-        return data.transpose((2, 0, 1)).expand_dims(axis=0), im
+def predict(x, net, ctx):
+    anchors, cls_preds, box_preds = net(x.as_in_context(ctx))
+    cls_probs = nd.SoftmaxActivation(cls_preds.transpose((0, 2, 1)), mode='channel')
+    return MultiBoxDetection(cls_probs, box_preds, anchors, force_suppress=True, clip=False)
 
-    def predict(self, x, net, ctx):
-        anchors, cls_preds, box_preds = net(x.as_in_context(ctx))
-        cls_probs = nd.SoftmaxActivation(cls_preds.transpose((0, 2, 1)), mode='channel')
-        return MultiBoxDetection(cls_probs, box_preds, anchors, force_suppress=True, clip=False)
 
-    def start_test(self, file_name, data_shape, rgb_mean):
-        ctx = GF.GluonFunc.get_gpu(0)
-        x, im = self.process_image(file_name, data_shape, rgb_mean)
-        out = self.predict(x)
-        out.shape
+def start_test(file_name, data_shape, rgb_mean):
+    ctx = GF.GluonFunc.get_gpu(0)
+    x, im = process_image(file_name, data_shape, rgb_mean)
+    out = predict(x)
+    out.shape
+
+
+def start_train(train_data, test_data, num_class, batch_size):
+    gf = GF.GluonFunc()
+    ctx = gf.get_gpu(1)
+    print(ctx)
+    # 初始化模型和训练器
+    # the CUDA implementation requres each image has at least 3 lables.
+    # Padd two -1 labels for each instance
+    train_data.reshape(label_shape=(3, 5))
+    train_data = test_data.sync_label_shape(train_data)
+
+    net = ToySSD(num_class)
+    net.initialize(init.Xavier(magnitude=2), ctx=ctx[0])
+    trainer = gluon.Trainer(net.collect_params(), 'sgd', {'learning_rate': 0.1, 'wd': 5e-4})
+
+    cls_loss = FocalLoss()
+    cls_metric = metric.Accuracy()
+    box_loss = SmoothL1Loss()
+    box_metric = metric.MAE()
+
+    # 训练模型
+    for epoch in range(30):
+        # reset data iterators and metrics
+        train_data.reset()
+        cls_metric.reset()
+        box_metric.reset()
+        tic = time.time()
+        for i, batch in enumerate(train_data):
+            # print(batch.data[0])
+            x = batch.data[0].as_in_context(ctx[0])
+            y = batch.label[0].as_in_context(ctx[0])
+            with autograd.record():
+                anchors, class_preds, box_preds = net(x)
+                box_target, box_mask, cls_target = training_targets(anchors, class_preds, y)
+                # losses
+                loss1 = cls_loss(class_preds, cls_target)
+                loss2 = box_loss(box_preds, box_target, box_mask)
+                loss = loss1 + loss2
+            loss.backward()
+            trainer.step(batch_size)
+            # update metrics
+            cls_metric.update([cls_target], [class_preds.transpose((0, 2, 1))])
+            box_metric.update([box_target], [box_preds * box_mask])
+
+        print('Epoch %2d, train %s %.2f, %s %.5f, time %.1f sec' % (epoch, *cls_metric.get(), *box_metric.get(), time.time() - tic))
+
 
 # ======================================================================================================================
 data_path = 'data/pikachu/'
@@ -262,10 +270,10 @@ if __name__ == '__main__':
 
     train_data, test_data, class_names, num_class = get_iterators(data_path, data_shape, batch_size)
     print('train_data', train_data, 'test_data', test_data, 'class_names', class_names, 'num_class', num_class)
-    Ai = ToySSD(num_class)
-    Ai.start_train(train_data, test_data, num_class, batch_size)
+    # Ai = ToySSD(num_class)
+    start_train(train_data, test_data, num_class, batch_size)
 
-    Ai.start_test('../img/pikachu.jpg', data_shape, rgb_mean)
+    start_test('../img/pikachu.jpg', data_shape, rgb_mean)
     # out = predict(x)
     # out.shape
 
